@@ -2,7 +2,12 @@
   "name": "webdav-sync",
   "displayName": "webdav-sync",
   "description": "sync files using webdav",
-  "version": "0.0.1",
+  "version": "0.0.9",
+  "author": {
+        "name": "leehaoze"
+  },
+  "license": "MIT",
+  "publisher": "leehaoze",
   "engines": {
     "vscode": "^1.95.0"
   },
@@ -24,6 +29,14 @@
       {
         "command": "webdav-sync.syncAll",
         "title": "Sync All To WebDAV Server"
+      },
+      {
+        "command": "webdav-sync.pauseSync",
+        "title": "暂停 WebDAV 同步"
+      },
+      {
+        "command": "webdav-sync.resumeSync",
+        "title": "恢复 WebDAV 同步"
       }
     ],
     "menus": {
@@ -85,6 +98,13 @@
     "lint": "eslint src",
     "test": "vscode-test"
   },
+  "repository": {
+        "type": "git",
+        "url": "https://github.com/leehaoze/webdav-sync"
+    },
+    "bugs": {
+        "url": "https://github.com/leehaoze/webdav-sync/issues"
+    },
   "devDependencies": {
     "@types/vscode": "^1.95.0",
     "@types/mocha": "^10.0.9",

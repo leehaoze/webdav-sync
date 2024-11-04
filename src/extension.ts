@@ -36,6 +36,8 @@ const pathMapper: PathMapper = {
 	}
 };
 
+// 在文件顶部添加一个全局变量来跟踪同步状态
+let isSyncPaused = false;
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -144,8 +146,22 @@ async function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
-	// 将监听器和命令添加到订阅列表
-	context.subscriptions.push(fileWatcher, syncCommand, syncAllCommand);
+	// 注册暂停同步命令
+	const pauseSyncCommand = vscode.commands.registerCommand('webdav-sync.pauseSync', () => {
+		isSyncPaused = true;
+		outputChannel.appendLine('WebDAV 同步已暂停');
+		vscode.window.showInformationMessage('WebDAV 同步已暂停');
+	});
+
+	// 注册恢复同步命令
+	const resumeSyncCommand = vscode.commands.registerCommand('webdav-sync.resumeSync', () => {
+		isSyncPaused = false;
+		outputChannel.appendLine('WebDAV 同步已恢复');
+		vscode.window.showInformationMessage('WebDAV 同步已恢复');
+	});
+
+	// 将新命令添加到订阅列表
+	context.subscriptions.push(fileWatcher, syncCommand, syncAllCommand, pauseSyncCommand, resumeSyncCommand);
 }
 
 // 监听文件变化
@@ -154,23 +170,26 @@ function watchFile(webdavClient: WebDAVClient, pathConfig: PathConfig): vscode.F
 
 	// 文件创建事件
 	fileWatcher.onDidCreate(uri => {
-		if (isHiddenFile(pathConfig, uri)) {
+		if (isHiddenFile(pathConfig, uri) || isSyncPaused) {
 			return;
 		}
+		syncToWebDAV(webdavClient, pathConfig, uri, 'create');
 	});
 
 	// 文件修改事件
 	fileWatcher.onDidChange(uri => {
-		if (isHiddenFile(pathConfig, uri)) {
+		if (isHiddenFile(pathConfig, uri) || isSyncPaused) {
 			return;
 		}
+		syncToWebDAV(webdavClient, pathConfig, uri, 'modify');
 	});
 
 	// 文件删除事件
 	fileWatcher.onDidDelete(uri => {
-		if (isHiddenFile(pathConfig, uri)) {
+		if (isHiddenFile(pathConfig, uri) || isSyncPaused) {
 			return;
 		}
+		syncToWebDAV(webdavClient, pathConfig, uri, 'delete');
 	});
 
 	return fileWatcher;

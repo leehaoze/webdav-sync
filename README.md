@@ -1,71 +1,90 @@
-# webdav-sync README
+# WebDAV Sync
 
-This is the README for your extension "webdav-sync". After writing up a brief description, we recommend including the following sections.
+WebDAV Sync 是一个 VS Code 扩展，用于实时同步本地文件到 WebDAV 服务器。它支持文件的自动同步、手动同步以及同步控制功能。
 
-## Features
+## 功能特点
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- 🔄 实时同步：自动监听文件变化并同步到 WebDAV 服务器
+- 📁 支持目录同步：可以同步单个文件或整个目录
+- 🎮 同步控制：支持暂停/恢复同步功能
+- 🖱️ 右键菜单集成：在文件资源管理器中快速访问同步功能
+- 📝 详细日志：提供同步操作的详细日志记录
 
-For example if there is an image subfolder under your extension project workspace:
+## 安装
 
-\!\[feature X\]\(images/feature-x.png\)
+在 VS Code 扩展市场中搜索 "webdav-sync" 并安装。
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+## 配置
 
-## Requirements
+在 VS Code 设置中配置以下选项：
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+1. `webdav-sync.serverHost`: WebDAV 服务器地址
+   - 示例：`http://1.1.1.1:8080/webdav`
+   - 必须包含协议、主机、端口和路径
 
-## Extension Settings
+2. `webdav-sync.username`: WebDAV 服务器用户名
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+3. `webdav-sync.password`: WebDAV 服务器密码
 
-For example:
+4. `webdav-sync.remotePath`: 远程服务器的文件路径
+   - 指定文件将被同步到服务器的哪个位置
 
-This extension contributes the following settings:
+5. `webdav-sync.localPath`: 本地路径
+   - 默认值：`${workspaceFolder}`（当前工作区目录）
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+这里重点说明一下本地路径、服务器路径、服务器地址之间的关系：
 
-## Known Issues
+- 服务器地址是指你的webdav服务器的地址，例如`http://1.1.1.1:8080/webdav`，包含有协议、主机、端口和路径，就像是具有一个webdav的一个接口一样。
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+- 服务器路径是指你希望将本地文件同步到webdav服务器的哪个位置，例如`/webdav/test`，这个路径是相对于服务器地址的，也就是说，你的webdav服务器地址是`http://1.1.1.1:8080/webdav`，那么服务器路径就是`/test`。
 
-## Release Notes
+- 本地路径是与你`服务器路径`相对应的，成映射关系。当有一个文件需要同步时，会将文件路径中的`本地路径`替换为`服务器路径`，然后同步到webdav服务器。
 
-Users appreciate release notes as you update your extension.
+举个例子：
 
-### 1.0.0
+通过nginx配置了一个path `/webdav/`为webdav服务器，我要将本地的`/Users/XiaoMing/Developer/code/text.js`同步到webdav服务器的`http://1.1.1.1:8080/webdav/code/text.js`，那么需要配置为：
 
-Initial release of ...
+- 服务器地址：`http://1.1.1.1:8080/webdav/`
+- 服务器路径：`/`
+- 本地路径：`/Users/XiaoMing/Developer/`
 
-### 1.0.1
 
-Fixed issue #.
+## 使用方法
 
-### 1.1.0
+### 自动同步
 
-Added features X, Y, and Z.
+安装并配置后，扩展会自动监听文件变化并同步到 WebDAV 服务器。
 
----
+### 手动同步
 
-## Following extension guidelines
+1. 单个文件/目录同步：
+   - 在文件资源管理器中右键点击文件或目录
+   - 选择 "Sync File To WebDAV"
 
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
+2. 同步所有文件：
+   - 打开命令面板（Ctrl+Shift+P 或 Cmd+Shift+P）
+   - 输入并选择 "Sync All To WebDAV Server"
 
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
+### 同步控制
 
-## Working with Markdown
+1. 暂停同步：
+   - 命令面板中输入 "暂停 WebDAV 同步"
+   - 暂停后，文件变更将不会被同步
 
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
+2. 恢复同步：
+   - 命令面板中输入 "恢复 WebDAV 同步"
+   - 恢复后，新的文件变更会继续同步
 
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
+## 注意事项
 
-## For more information
+- 默认不同步隐藏文件（以 . 开头的文件/目录）
+- 首次使用前请确保 WebDAV 服务器配置正确
+- 建议在进行大量文件操作前暂停同步，完成后再恢复
 
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
+## 问题反馈
 
-**Enjoy!**
+如果您遇到任何问题或有改进建议，请在 GitHub 仓库提交 Issue。
+
+## 许可证
+
+MIT License
