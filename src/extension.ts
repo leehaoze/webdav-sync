@@ -36,12 +36,15 @@ const pathMapper: PathMapper = {
 	}
 };
 
-// 在文件顶部添加一个全局变量来跟踪同步状态
-let isSyncPaused = false;
+// 修改全局变量声明
+let isSyncPaused: boolean;
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 async function activate(context: vscode.ExtensionContext) {
+	// 从 workspace state 中恢复同步状态，默认为 true (暂停状态)
+	isSyncPaused = context.workspaceState.get('webdav-sync.isSyncPaused', true);
+	
 	// 开启log窗口
 	context.subscriptions.push(
         outputChannel = vscode.window.createOutputChannel('webdav-sync')
@@ -71,19 +74,53 @@ async function activate(context: vscode.ExtensionContext) {
 		if (uri) {
 			const stat = await vscode.workspace.fs.stat(uri);
 			if (stat.type === vscode.FileType.Directory) {
-				// 如果是目录,递归处理
-				const files = await vscode.workspace.fs.readDirectory(uri);
-				for (const [name, type] of files) {
-					const filePath = vscode.Uri.joinPath(uri, name);
-					if (type === vscode.FileType.Directory) {
-						// 递归处理子目录
-						await vscode.commands.executeCommand('webdav-sync.syncFile', filePath);
-					} else {
-						// 同步文件
-						await syncToWebDAV(client, pathConfig, filePath, 'modify', false);
+				// 如果是目录，显示进度
+				await vscode.window.withProgress({
+					location: vscode.ProgressLocation.Notification,
+					title: "正在同步文件夹",
+					cancellable: true
+				}, async (progress, token) => {
+					// 获取目录下所有文件
+					const files: vscode.Uri[] = [];
+					async function collectFiles(folderUri: vscode.Uri) {
+						const entries = await vscode.workspace.fs.readDirectory(folderUri);
+						for (const [name, type] of entries) {
+							const filePath = vscode.Uri.joinPath(folderUri, name);
+							if (type === vscode.FileType.Directory) {
+								await collectFiles(filePath);
+							} else {
+								files.push(filePath);
+							}
+						}
 					}
-				}
-				vscode.window.showInformationMessage(`目录同步完成: ${uri.fsPath}`);
+					await collectFiles(uri);
+
+					const totalFiles = files.length;
+					let processedFiles = 0;
+
+					// 同步所有文件
+					for (const file of files) {
+						if (token.isCancellationRequested) {
+							outputChannel.appendLine('同步操作已取消');
+							break;
+						}
+
+						try {
+							await syncToWebDAV(client, pathConfig, file, 'modify', false);
+							processedFiles++;
+							progress.report({
+								message: `已同步 ${processedFiles}/${totalFiles} 个文件`,
+								increment: (100 / totalFiles)
+							});
+						} catch (error) {
+							outputChannel.appendLine(`同步文件失败 ${file.fsPath}: ${error}`);
+							continue;
+						}
+					}
+
+					outputChannel.appendLine(`文件夹同步完成，共处理 ${processedFiles}/${totalFiles} 个文件`);
+					vscode.window.showInformationMessage(`文件夹同步完成: ${uri.fsPath}，共处理 ${processedFiles}/${totalFiles} 个文件`);
+				});
 			} else {
 				// 如果是文件直接同步
 				await syncToWebDAV(client, pathConfig, uri);
@@ -146,22 +183,32 @@ async function activate(context: vscode.ExtensionContext) {
 		}
 	});
 
-	// 注册暂停同步命令
-	const pauseSyncCommand = vscode.commands.registerCommand('webdav-sync.pauseSync', () => {
+	// 修改暂停同步命令
+	const pauseSyncCommand = vscode.commands.registerCommand('webdav-sync.pauseSync', async () => {
 		isSyncPaused = true;
+		await context.workspaceState.update('webdav-sync.isSyncPaused', true);
 		outputChannel.appendLine('WebDAV 同步已暂停');
 		vscode.window.showInformationMessage('WebDAV 同步已暂停');
 	});
 
-	// 注册恢复同步命令
-	const resumeSyncCommand = vscode.commands.registerCommand('webdav-sync.resumeSync', () => {
+	// 修改恢复同步命令
+	const resumeSyncCommand = vscode.commands.registerCommand('webdav-sync.resumeSync', async () => {
 		isSyncPaused = false;
+		await context.workspaceState.update('webdav-sync.isSyncPaused', false);
 		outputChannel.appendLine('WebDAV 同步已恢复');
 		vscode.window.showInformationMessage('WebDAV 同步已恢复');
 	});
 
 	// 将新命令添加到订阅列表
 	context.subscriptions.push(fileWatcher, syncCommand, syncAllCommand, pauseSyncCommand, resumeSyncCommand);
+
+	// 在初始化完成后根据状态显示对应提示
+	outputChannel.appendLine(`WebDAV 同步已启动，当前处于${isSyncPaused ? '暂停' : '运行'}状态`);
+	vscode.window.showInformationMessage(
+		isSyncPaused 
+			? 'WebDAV 同步已启动，当前处于暂停状态。使用命令面板中的"Start WebDAV Sync"来开始同步。'
+			: 'WebDAV 同步已启动，当前处于运行状态。'
+	);
 }
 
 // 监听文件变化

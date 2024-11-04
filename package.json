@@ -32,11 +32,11 @@
       },
       {
         "command": "webdav-sync.pauseSync",
-        "title": "暂停 WebDAV 同步"
+        "title": "Stop WebDAV Sync"
       },
       {
         "command": "webdav-sync.resumeSync",
-        "title": "恢复 WebDAV 同步"
+        "title": "Start WebDAV Sync"
       }
     ],
     "menus": {
