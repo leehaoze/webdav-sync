@@ -80,7 +80,7 @@ async function activate(context: vscode.ExtensionContext) {
 						await vscode.commands.executeCommand('webdav-sync.syncFile', filePath);
 					} else {
 						// 同步文件
-						await syncToWebDAV(client, pathConfig, filePath);
+						await syncToWebDAV(client, pathConfig, filePath, 'modify', false);
 					}
 				}
 				vscode.window.showInformationMessage(`目录同步完成: ${uri.fsPath}`);
