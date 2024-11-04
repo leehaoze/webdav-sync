@@ -9,15 +9,67 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "keywords": [
+    "webdav",
+    "sync"
+  ],
+  "activationEvents": ["onStartupFinished"],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "webdav-sync.helloWorld",
-        "title": "Hello World"
+        "command": "webdav-sync.syncFile",
+        "title": "Sync File To WebDAV"
+      },
+      {
+        "command": "webdav-sync.syncAll",
+        "title": "Sync All To WebDAV Server"
       }
-    ]
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "webdav-sync.syncFile",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "webdav-sync.syncFile",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "WebDAV Sync",
+      "properties": {
+        "webdav-sync.serverHost": {
+          "type": "string",
+          "default": "localhost", 
+          "description": "WebDAV 服务器地址，需要包含协议、主机、端口、路径，例如 http://1.1.1.1:8080/webdav"
+        },
+        "webdav-sync.username": {
+          "type": "string",
+          "default": "",
+          "description": "WebDAV 服务器用户名"
+        },
+        "webdav-sync.password": {
+          "type": "string",
+          "default": "",
+          "description": "WebDAV 服务器密码"
+        },
+        "webdav-sync.remotePath": {
+          "type": "string",
+          "default": "",
+          "description": "远端服务器的文件路径。与服务器Path不同，该配置项配置的是服务器上的文件路径。"
+        },
+        "webdav-sync.localPath": {
+          "type": "string", 
+          "default": "${workspaceFolder}",
+          "description": "本地路径，与服务端路径相对应，一般为当前项目根目录。"
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
@@ -45,5 +97,8 @@
     "typescript": "^5.6.3",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1"
+  },
+  "dependencies": {
+    "webdav": "^5.3.1"
   }
 }
