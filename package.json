@@ -2,7 +2,7 @@
   "name": "webdav-sync",
   "displayName": "webdav-sync",
   "description": "sync files using webdav",
-  "version": "1.0.1",
+  "version": "1.0.5",
   "author": {
         "name": "leehaoze"
   },
@@ -58,7 +58,7 @@
       "properties": {
         "webdav-sync.serverHost": {
           "type": "string",
-          "default": "localhost", 
+          "default": "", 
           "description": "WebDAV 服务器地址，需要包含协议、主机、端口、路径，例如 http://1.1.1.1:8080/webdav"
         },
         "webdav-sync.username": {
@@ -78,7 +78,7 @@
         },
         "webdav-sync.localPath": {
           "type": "string", 
-          "default": "${workspaceFolder}",
+          "default": "",
           "description": "本地路径，与服务端路径相对应，一般为当前项目根目录。"
         }
       }

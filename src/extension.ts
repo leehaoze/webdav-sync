@@ -6,6 +6,7 @@ import * as path from 'path';
 import { createClient, WebDAVClient } from 'webdav';
 
 let outputChannel: vscode.OutputChannel;
+let statusBarItem: vscode.StatusBarItem;
 
 // 路径配置
 interface PathConfig {
@@ -45,6 +46,11 @@ async function activate(context: vscode.ExtensionContext) {
 	// 从 workspace state 中恢复同步状态，默认为 true (暂停状态)
 	isSyncPaused = context.workspaceState.get('webdav-sync.isSyncPaused', true);
 	
+	// 创建状态栏项
+	statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+	context.subscriptions.push(statusBarItem);
+	updateStatusBarItem();
+
 	// 开启log窗口
 	context.subscriptions.push(
         outputChannel = vscode.window.createOutputChannel('webdav-sync')
@@ -187,6 +193,7 @@ async function activate(context: vscode.ExtensionContext) {
 	const pauseSyncCommand = vscode.commands.registerCommand('webdav-sync.pauseSync', async () => {
 		isSyncPaused = true;
 		await context.workspaceState.update('webdav-sync.isSyncPaused', true);
+		updateStatusBarItem();
 		outputChannel.appendLine('WebDAV 同步已暂停');
 		vscode.window.showInformationMessage('WebDAV 同步已暂停');
 	});
@@ -195,6 +202,7 @@ async function activate(context: vscode.ExtensionContext) {
 	const resumeSyncCommand = vscode.commands.registerCommand('webdav-sync.resumeSync', async () => {
 		isSyncPaused = false;
 		await context.workspaceState.update('webdav-sync.isSyncPaused', false);
+		updateStatusBarItem();
 		outputChannel.appendLine('WebDAV 同步已恢复');
 		vscode.window.showInformationMessage('WebDAV 同步已恢复');
 	});
@@ -279,7 +287,7 @@ async function syncToWebDAV(
                 });
                 
                 if (showNotification) {
-                    vscode.window.showInformationMessage(`文件已同步: ${relativePath}`);
+                    vscode.window.setStatusBarMessage(`文件已同步: ${relativePath}`, 3000);
                 }
                 break;
 
@@ -287,7 +295,7 @@ async function syncToWebDAV(
                 // 删除远程文件
                 await webdavClient.deleteFile(remotePath);
                 if (showNotification) {
-                    vscode.window.showInformationMessage(`文件已删除: ${relativePath}`);
+                    vscode.window.setStatusBarMessage(`文件已删除: ${relativePath}`, 3000);
                 }
                 break;
         }
@@ -407,5 +415,18 @@ async function getAllFiles(folder: vscode.Uri): Promise<vscode.Uri[]> {
 async function deactivate() {
 }
 
+// 更新状态栏项
+function updateStatusBarItem() {
+	if (isSyncPaused) {
+		statusBarItem.text = "$(sync-ignored) WebDAV 同步已暂停";
+		statusBarItem.command = 'webdav-sync.resumeSync';
+		statusBarItem.tooltip = '点击恢复同步';
+	} else {
+		statusBarItem.text = "$(sync) WebDAV 同步运行中";
+		statusBarItem.command = 'webdav-sync.pauseSync';
+		statusBarItem.tooltip = '点击暂停同步';
+	}
+	statusBarItem.show();
+}
 
 export { activate, deactivate };
