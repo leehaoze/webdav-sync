@@ -2,7 +2,7 @@
   "name": "webdav-sync",
   "displayName": "webdav-sync",
   "description": "sync files using webdav",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "author": {
         "name": "leehaoze"
   },
@@ -37,6 +37,10 @@
       {
         "command": "webdav-sync.resumeSync",
         "title": "Start WebDAV Sync"
+      },
+      {
+        "command": "webdav-sync.reconnect",
+        "title": "Reconnect WebDAV"
       }
     ],
     "menus": {

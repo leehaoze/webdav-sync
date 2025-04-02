@@ -30,15 +30,27 @@ const pathMapper: PathMapper = {
 	config: pathConfig,
 
 	getRemotePath(localPath: string): string {
+		// 统一使用正斜杠
+		const normalizedLocalPath = localPath.replace(/\\/g, '/');
+		const normalizedBasePath = this.config.localBasePath.replace(/\\/g, '/');
+
 		// 去除本地基础路径
-		const trimmedPath = localPath.replace(this.config.localBasePath, '').replace(/^[\/\\]/, '');
-		// 追加远程基础路径,统一使用正斜杠
-		return path.join(this.config.remoteBasePath, trimmedPath).replace(/\\/g, '/');
+		let relativePath = normalizedLocalPath.replace(normalizedBasePath, '');
+		
+		// 移除开头的斜杠和可能存在的盘符（比如 C:）
+		relativePath = relativePath.replace(/^[\/\\]/, '').replace(/^[A-Za-z]:/, '');
+		
+		// 确保远程基础路径不以斜杠结尾
+		const remoteBase = this.config.remoteBasePath.replace(/\/$/, '');
+		
+		// 组合远程路径
+		return `${remoteBase}/${relativePath}`;
 	}
 };
 
 // 修改全局变量声明
 let isSyncPaused: boolean;
+let client: WebDAVClient | null = null;
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -58,25 +70,93 @@ async function activate(context: vscode.ExtensionContext) {
     outputChannel.hide();
 	
 	// 连接 WebDAV 服务器
-	const client = await connectWebDAV();
-	if (!client) {
-		return;
-	}
+	client = await connectWebDAV();
 
 	// 初始化路径配置
 	const config = initPathConfig();
 	if (!config) {
+		vscode.window.showErrorMessage('请在设置中配置 webdav-sync.localPath 和 webdav-sync.remotePath');
 		return;
 	}
 
 	pathConfig.localBasePath = config.localBasePath;
 	pathConfig.remoteBasePath = config.remoteBasePath;
 
-	// 开启文件监听
-	const fileWatcher = watchFile(client, pathConfig);
+	// 监听配置变更
+	context.subscriptions.push(
+		vscode.workspace.onDidChangeConfiguration(async e => {
+			if (e.affectsConfiguration('webdav-sync.localPath') || 
+				e.affectsConfiguration('webdav-sync.remotePath') ||
+				e.affectsConfiguration('webdav-sync.serverHost') ||
+				e.affectsConfiguration('webdav-sync.username') ||
+				e.affectsConfiguration('webdav-sync.password')) {
+				
+				outputChannel.appendLine('检测到配置变更，重新初始化...');
+				
+				// 重新连接WebDAV
+				if (e.affectsConfiguration('webdav-sync.serverHost') ||
+					e.affectsConfiguration('webdav-sync.username') ||
+					e.affectsConfiguration('webdav-sync.password')) {
+					client = await connectWebDAV();
+				}
+				
+				// 重新初始化路径配置
+				if (e.affectsConfiguration('webdav-sync.localPath') ||
+					e.affectsConfiguration('webdav-sync.remotePath')) {
+					const newConfig = initPathConfig();
+					if (newConfig) {
+						pathConfig.localBasePath = newConfig.localBasePath;
+						pathConfig.remoteBasePath = newConfig.remoteBasePath;
+						outputChannel.appendLine(`路径配置已更新：
+本地路径: ${pathConfig.localBasePath}
+远程路径: ${pathConfig.remoteBasePath}`);
+					}
+				}
+				
+				// 更新状态栏
+				updateStatusBarItem();
+				
+				// 如果有文件监听器，需要重新创建
+				if (fileWatcher) {
+					fileWatcher.dispose();
+					if (client) {
+						fileWatcher = watchFile(client, pathConfig);
+					}
+				}
+			}
+		})
+	);
+
+	// 开启文件监听（只有在连接成功时才监听）
+	let fileWatcher: vscode.FileSystemWatcher | undefined;
+	if (client) {
+		fileWatcher = watchFile(client, pathConfig);
+	}
+
+	// 注册重新连接命令
+	const reconnectCommand = vscode.commands.registerCommand('webdav-sync.reconnect', async () => {
+		client = await connectWebDAV();
+		if (client) {
+			// 如果之前有文件监听器，先移除
+			if (fileWatcher) {
+				fileWatcher.dispose();
+			}
+			// 创建新的文件监听器
+			fileWatcher = watchFile(client, pathConfig);
+			vscode.window.showInformationMessage('WebDAV 连接已重新建立');
+			updateStatusBarItem();
+		}
+	});
 
 	// 注册右键菜单命令
 	const syncCommand = vscode.commands.registerCommand('webdav-sync.syncFile', async (uri: vscode.Uri) => {
+		if (!client) {
+			vscode.window.showErrorMessage('WebDAV 未连接，请检查配置并重新连接');
+			return;
+		}
+
+		const webdavClient = client; // 创建一个确定非空的引用
+
 		if (uri) {
 			const stat = await vscode.workspace.fs.stat(uri);
 			if (stat.type === vscode.FileType.Directory) {
@@ -111,8 +191,13 @@ async function activate(context: vscode.ExtensionContext) {
 							break;
 						}
 
+						if (!client) {
+							outputChannel.appendLine('WebDAV 连接已断开，同步操作终止');
+							break;
+						}
+
 						try {
-							await syncToWebDAV(client, pathConfig, file, 'modify', false);
+							await syncToWebDAV(webdavClient, pathConfig, file, 'modify', false);
 							processedFiles++;
 							progress.report({
 								message: `已同步 ${processedFiles}/${totalFiles} 个文件`,
@@ -129,7 +214,7 @@ async function activate(context: vscode.ExtensionContext) {
 				});
 			} else {
 				// 如果是文件直接同步
-				await syncToWebDAV(client, pathConfig, uri);
+				await syncToWebDAV(webdavClient, pathConfig, uri);
 			}
 		} else {
 			vscode.window.showWarningMessage('请在文件或文件夹上右键选择同步');
@@ -138,6 +223,13 @@ async function activate(context: vscode.ExtensionContext) {
 
 	// 注册同步所有文件的命令
 	const syncAllCommand = vscode.commands.registerCommand('webdav-sync.syncAll', async () => {
+		if (!client) {
+			vscode.window.showErrorMessage('WebDAV 未连接，请检查配置并重新连接');
+			return;
+		}
+
+		const webdavClient = client; // 创建一个确定非空的引用
+
 		try {
 			// 获取工作区
 			const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -167,7 +259,7 @@ async function activate(context: vscode.ExtensionContext) {
 					}
 
 					try {
-						await syncToWebDAV(client, pathConfig, file, 'modify', false);
+						await syncToWebDAV(webdavClient, pathConfig, file, 'modify', false);
 						processedFiles++;
 						progress.report({
 							message: `已同步 ${processedFiles}/${totalFiles} 个文件`,
@@ -200,6 +292,11 @@ async function activate(context: vscode.ExtensionContext) {
 
 	// 修改恢复同步命令
 	const resumeSyncCommand = vscode.commands.registerCommand('webdav-sync.resumeSync', async () => {
+		if (!client) {
+			vscode.window.showErrorMessage('WebDAV 未连接，请检查配置并重新连接');
+			return;
+		}
+
 		isSyncPaused = false;
 		await context.workspaceState.update('webdav-sync.isSyncPaused', false);
 		updateStatusBarItem();
@@ -208,15 +305,26 @@ async function activate(context: vscode.ExtensionContext) {
 	});
 
 	// 将新命令添加到订阅列表
-	context.subscriptions.push(fileWatcher, syncCommand, syncAllCommand, pauseSyncCommand, resumeSyncCommand);
+	context.subscriptions.push(
+		reconnectCommand,
+		...(fileWatcher ? [fileWatcher] : []),
+		syncCommand,
+		syncAllCommand,
+		pauseSyncCommand,
+		resumeSyncCommand
+	);
 
 	// 在初始化完成后根据状态显示对应提示
-	outputChannel.appendLine(`WebDAV 同步已启动，当前处于${isSyncPaused ? '暂停' : '运行'}状态`);
-	vscode.window.showInformationMessage(
-		isSyncPaused 
-			? 'WebDAV 同步已启动，当前处于暂停状态。使用命令面板中的"Start WebDAV Sync"来开始同步。'
-			: 'WebDAV 同步已启动，当前处于运行状态。'
-	);
+	if (!client) {
+		vscode.window.showErrorMessage('WebDAV 连接失败，请检查配置并使用命令面板中的"Reconnect WebDAV"重新连接');
+	} else {
+		outputChannel.appendLine(`WebDAV 同步已启动，当前处于${isSyncPaused ? '暂停' : '运行'}状态`);
+		vscode.window.showInformationMessage(
+			isSyncPaused 
+				? 'WebDAV 同步已启动，当前处于暂停状态。使用命令面板中的"Start WebDAV Sync"来开始同步。'
+				: 'WebDAV 同步已启动，当前处于运行状态。'
+		);
+	}
 }
 
 // 监听文件变化
@@ -225,7 +333,7 @@ function watchFile(webdavClient: WebDAVClient, pathConfig: PathConfig): vscode.F
 
 	// 文件创建事件
 	fileWatcher.onDidCreate(uri => {
-		if (isHiddenFile(pathConfig, uri) || isSyncPaused) {
+		if (isHiddenFile(pathConfig, uri) || isSyncPaused || !client) {
 			return;
 		}
 		syncToWebDAV(webdavClient, pathConfig, uri, 'create');
@@ -233,7 +341,7 @@ function watchFile(webdavClient: WebDAVClient, pathConfig: PathConfig): vscode.F
 
 	// 文件修改事件
 	fileWatcher.onDidChange(uri => {
-		if (isHiddenFile(pathConfig, uri) || isSyncPaused) {
+		if (isHiddenFile(pathConfig, uri) || isSyncPaused || !client) {
 			return;
 		}
 		syncToWebDAV(webdavClient, pathConfig, uri, 'modify');
@@ -241,7 +349,7 @@ function watchFile(webdavClient: WebDAVClient, pathConfig: PathConfig): vscode.F
 
 	// 文件删除事件
 	fileWatcher.onDidDelete(uri => {
-		if (isHiddenFile(pathConfig, uri) || isSyncPaused) {
+		if (isHiddenFile(pathConfig, uri) || isSyncPaused || !client) {
 			return;
 		}
 		syncToWebDAV(webdavClient, pathConfig, uri, 'delete');
@@ -340,12 +448,22 @@ function isHiddenFile(pathConfig: PathConfig, uri: vscode.Uri): boolean {
 // 初始化路径配置
 function initPathConfig(): PathConfig | null {
 	const config = vscode.workspace.getConfiguration('webdav-sync');
-	const localPath = config.get<string>('localPath');
+	let localPath = config.get<string>('localPath');
 	const baseURL = config.get<string>('remotePath');
 
 	if (!localPath || !baseURL) {
-		vscode.window.showErrorMessage('请在设置中配置 webdav-sync.localPath 和 webdav-sync.baseURL');
+		vscode.window.showErrorMessage('请在设置中配置 webdav-sync.localPath 和 webdav-sync.remotePath');
 		return null;
+	}
+
+	// 处理工作区变量
+	if (localPath === '${workspaceFolder}' || localPath.includes('${workspaceFolder}')) {
+		const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+		if (!workspaceFolder) {
+			vscode.window.showErrorMessage('未找到工作区文件夹');
+			return null;
+		}
+		localPath = localPath.replace('${workspaceFolder}', workspaceFolder.uri.fsPath);
 	}
 
 	return {
@@ -417,7 +535,11 @@ async function deactivate() {
 
 // 更新状态栏项
 function updateStatusBarItem() {
-	if (isSyncPaused) {
+	if (!client) {
+		statusBarItem.text = "$(error) WebDAV 未连接";
+		statusBarItem.command = 'webdav-sync.reconnect';
+		statusBarItem.tooltip = '点击重新连接';
+	} else if (isSyncPaused) {
 		statusBarItem.text = "$(sync-ignored) WebDAV 同步已暂停";
 		statusBarItem.command = 'webdav-sync.resumeSync';
 		statusBarItem.tooltip = '点击恢复同步';
